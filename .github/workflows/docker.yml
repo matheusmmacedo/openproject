@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'packages/src/**'
+      - 'packages/**'
       - 'Dockerfile'
       - '.github/workflows/docker.yml'
   workflow_dispatch:

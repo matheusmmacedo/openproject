@@ -14,6 +14,13 @@ FROM openproject/openproject:${OPENPROJECT_VERSION}
 # the sister Zammad repo's auto_install/ directory.
 USER root
 RUN mkdir -p /opt/klaos/assets && chown -R 1000:1000 /opt/klaos/assets
-USER 1000:1000
 
+# Stage branding assets for runtime use.
 COPY --chown=1000:1000 packages/src/klaos-branding/ /opt/klaos/assets/
+
+# Drop Ruby initializers (loaded after Rails boot, last because of zzz_ prefix).
+# This is the KLaOS local override layer — patches EnterpriseToken and similar
+# at runtime without touching upstream source files.
+COPY --chown=1000:1000 packages/src/klaos-enterprise-unlock/config/initializers/ /app/config/initializers/
+
+USER 1000:1000
