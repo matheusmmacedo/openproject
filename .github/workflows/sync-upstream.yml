@@ -1,0 +1,46 @@
+name: Check upstream openproject-docker-compose
+
+on:
+  schedule:
+    - cron: '15 7 * * 1'   # Monday 07:15 UTC (15min after the Zammad sync)
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare pinned SHA with upstream HEAD
+        id: shas
+        run: |
+          PINNED="$(tr -d '[:space:]' < UPSTREAM | grep -oE '[0-9a-f]{12}$' || true)"
+          LATEST="$(curl -s https://api.github.com/repos/opf/openproject-docker-compose/commits/stable/17 \
+            | grep '"sha"' | head -1 | sed -E 's/.*"sha": "([^"]+)".*/\1/' | cut -c1-12)"
+          echo "pinned=$PINNED"  >> "$GITHUB_OUTPUT"
+          echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
+          if [ "$PINNED" != "$LATEST" ]; then echo "changed=1" >> "$GITHUB_OUTPUT"; else echo "changed=0" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Apply upstream
+        if: steps.shas.outputs.changed == '1'
+        run: bash scripts/update-upstream.sh --apply
+
+      - name: Open PR
+        if: steps.shas.outputs.changed == '1'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: chore/upstream-${{ steps.shas.outputs.latest }}
+          base: main
+          title: "chore: bump openproject-docker-compose to ${{ steps.shas.outputs.latest }}"
+          body: |
+            Automated upstream bump.
+
+            | Pinned | Latest |
+            |---|---|
+            | `${{ steps.shas.outputs.pinned }}` | `${{ steps.shas.outputs.latest }}` |
+
+            Review `docker-compose.yml`, `proxy/`, `control/` and `.env.example` carefully.
+          commit-message: "chore: bump openproject-docker-compose to ${{ steps.shas.outputs.latest }}"

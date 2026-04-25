@@ -1,0 +1,138 @@
+networks:
+  frontend:
+  backend:
+
+volumes:
+  pgdata:
+  opdata:
+
+x-op-restart-policy: &restart_policy
+  restart: unless-stopped
+x-op-image: &image
+  image: openproject/openproject:${TAG:-17-slim}
+x-op-app: &app
+  <<: [*image, *restart_policy]
+  environment:
+    OPENPROJECT_HTTPS: "${OPENPROJECT_HTTPS:-true}"
+    OPENPROJECT_HOST__NAME: "${OPENPROJECT_HOST__NAME:-localhost:8080}"
+    OPENPROJECT_ADDITIONAL__HOST__NAMES: "${OPENPROJECT_ADDITIONAL__HOST__NAMES:-web}" # to allow access from hocuspocus directly
+    OPENPROJECT_HSTS: "${OPENPROJECT_HSTS:-true}"
+    OPENPROJECT_RAILS__CACHE__STORE: "memcache"
+    OPENPROJECT_CACHE__MEMCACHE__SERVER: "cache:11211"
+    OPENPROJECT_RAILS__RELATIVE__URL__ROOT: "${OPENPROJECT_RAILS__RELATIVE__URL__ROOT:-}"
+    OPENPROJECT_COLLABORATIVE__EDITING__HOCUSPOCUS__URL: "${COLLABORATIVE_SERVER_URL:-wss://${OPENPROJECT_HOST__NAME}/hocuspocus}"
+    OPENPROJECT_COLLABORATIVE__EDITING__HOCUSPOCUS__SECRET: "${COLLABORATIVE_SERVER_SECRET:-OVERRIDE_ME_PLEASE}"
+    DATABASE_URL: "${DATABASE_URL:-postgres://postgres:p4ssw0rd@db/openproject?pool=20&encoding=unicode&reconnect=true}"
+    RAILS_MIN_THREADS: ${RAILS_MIN_THREADS:-4}
+    RAILS_MAX_THREADS: ${RAILS_MAX_THREADS:-16}
+    # set to true to enable the email receiving feature. See ./docker/cron for more options
+    IMAP_ENABLED: "${IMAP_ENABLED:-false}"
+    SECRET_KEY_BASE: "${SECRET_KEY_BASE:-OVERWRITE_ME}"
+  volumes:
+    - "${OPDATA:-opdata}:/var/openproject/assets"
+
+services:
+  db:
+    # The default here should really be 17 but is still 13 as to not break existing setups.
+    # New installations using the provided .env.example will use 17 to begin with.
+    # The default here will change to 17 as well with the next major update (18).
+    #
+    # Refer to the docs on how to upgrade to postgres 17 before then:
+    #   https://www.openproject.org/docs/installation-and-operations/misc/migration-to-postgresql17/
+    image: postgres:${POSTGRES_VERSION:-13}
+    <<: *restart_policy
+    stop_grace_period: "3s"
+    volumes:
+      - "${PGDATA:-pgdata}:/var/lib/postgresql/data"
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-p4ssw0rd}
+      POSTGRES_DB: openproject
+    networks:
+      - backend
+
+  cache:
+    image: memcached
+    <<: *restart_policy
+    networks:
+      - backend
+
+  proxy:
+    build:
+      context: ./proxy
+      args:
+        APP_HOST: web
+    image: openproject/proxy
+    <<: *restart_policy
+    ports:
+      - "${PORT:-8080}:80"
+    depends_on:
+      - web
+    networks:
+      - frontend
+
+  web:
+    <<: *app
+    command: "./docker/prod/web"
+    hostname: "${OPENPROJECT_HOST__NAME:-localhost:8080}"
+    networks:
+      - frontend
+      - backend
+    depends_on:
+      - db
+      - cache
+      - seeder
+    labels:
+      - autoheal=true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080${OPENPROJECT_RAILS__RELATIVE__URL__ROOT:-}/health_checks/default"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+
+  autoheal:
+    image: willfarrell/autoheal:1.2.0
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    environment:
+      AUTOHEAL_CONTAINER_LABEL: autoheal
+      AUTOHEAL_START_PERIOD: 600
+      AUTOHEAL_INTERVAL: 30
+
+  worker:
+    <<: *app
+    command: "./docker/prod/worker"
+    networks:
+      - backend
+    depends_on:
+      - db
+      - cache
+      - seeder
+
+  cron:
+    <<: *app
+    command: "./docker/prod/cron"
+    networks:
+      - backend
+    depends_on:
+      - db
+      - cache
+      - seeder
+
+  seeder:
+    <<: *app
+    command: "./docker/prod/seeder"
+    restart: on-failure
+    networks:
+      - backend
+
+  hocuspocus:
+    image: openproject/hocuspocus:17.3.1
+    environment:
+      SECRET: ${COLLABORATIVE_SERVER_SECRET:-OVERRIDE_ME_PLEASE}
+      OPENPROJECT_URL: "${OPENPROJECT_URL:-http://web:8080}"
+      OPENPROJECT_HTTPS: "${OPENPROJECT_HTTPS:-true}"
+    networks:
+      - backend
+      - frontend
+    <<: *restart_policy

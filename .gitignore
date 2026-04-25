@@ -1,0 +1,21 @@
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+
+# IDE
+.idea/
+.vscode/
+
+# Local env
+.env
+.env.local
+.env.*.local
+
+# Node — scripts install pg/etc on demand
+node_modules/
+package.json
+package-lock.json
+
+# Claude Code session context (per-project, do not commit)
+.claude/
