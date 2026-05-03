@@ -91,3 +91,30 @@ Boot pega image OP slim → mounta volume → roda `entrypoint-slim.sh` → carr
 
 - AGENTES de fix automático (klaos-agent-runner) leem ESTE arquivo via `loadRepoContext`.
 - Mude regras aqui se a estratégia evoluir.
+
+---
+
+## Migrations & Auto-apply pelo runner
+
+<!-- DEVPILOT-MIGRATIONS-SKILL: gerenciado por scripts/update-agents-md-all-repos.mjs no zammad. Editar manualmente vai sobrescrever no próximo run. -->
+
+**Você NÃO precisa rodar `db:migrate` manualmente** — o `klaos-agent-runner`
+roda `bin/rails db:migrate RAILS_ENV=<env>` em cada etapa do pipeline:
+
+- Pipeline configurado: `dev` → `prod`
+- PR mergeado em `dev` → runner faz `bundle exec rails db:migrate` no
+  container daquele env.
+- Promote PR `dev → main` → roda em prod (env `prod` com
+  `requires_approval=true` exige humano).
+
+**Regras pra escrever a migration:**
+- Use o gerador: `bin/rails g migration AddXyzToFoos` (sem editar timestamps).
+- **Reversível:** todo `up` precisa de `down` correspondente, ou usar
+  `change` quando seguro. Migrations irreversíveis precisam de
+  `raise ActiveRecord::IrreversibleMigration` no down.
+- **Sem dados em massa em transação:** UPDATE/DELETE em milhões de rows tem
+  que ir em `disable_ddl_transaction!` + batches de 1k.
+
+Ad-hoc/troubleshooting: `bin/rails dbconsole` no container, ou
+`mcp__supabase__execute_sql` se a DB tiver Supabase wrapper.
+
