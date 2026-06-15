@@ -32,12 +32,14 @@ sudo chown 1000:1000 -R /var/openproject/assets
 Next you start up the containers in the background while making sure to pull the latest versions of all used images.
 
 ```shell
-OPENPROJECT_HTTPS=false docker compose up -d --build --pull always
+SECRET_KEY_BASE=<your-secret-key-base> OPENPROJECT_HTTPS=false docker compose up -d --build --pull always
 ```
-
 After a while, OpenProject should be up and running on `http://localhost:8080`. The default username and password is login: `admin`, and password: `admin`.
 The `OPENPROJECT_HTTPS=false` environment variable explicitly disables HTTPS mode for the first startup. Without this, OpenProject assumes it's running behind HTTPS in production by default.
 We do strongly recommend you use OpenProject behind a TLS terminated proxy for production purposes and remove this flag before actually starting to use it.
+
+You will also need to provide a secure key for the `SECRET_KEY_BASE`, it should be unique and treated like a password.
+This value is used to derive keys for the Rails application. Changing this value will invalidate all cookies, including sessions and 2FA remembering tokens.
 
 ### Customization
 
